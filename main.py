@@ -15,8 +15,11 @@ listener_status = {
     "mouse": False,
 }
 
-hotkey = None
-KEYBOARD_MODIFIERS = {
+cmd_pressed = False
+ctrl_pressed = False
+TOGGLE_KEY = keyboard.KeyCode.from_char("k")
+
+MODIFIER_KEYS = {
     keyboard.Key.cmd,
     keyboard.Key.cmd_l,
     keyboard.Key.cmd_r,
@@ -30,43 +33,6 @@ def set_status(text):
     root.after(0, lambda: status.config(text=text))
 
 
-def start_macro():
-    global running, stop_now
-
-    if running:
-        set_status("Already running")
-        return
-
-    running = True
-    stop_now = False
-    set_status("Running built-in macro...")
-
-    thread = threading.Thread(target=run_macro, daemon=True)
-    thread.start()
-
-
-def run_macro():
-    global running
-
-    try:
-        root.after(0, root.withdraw)
-        time.sleep(2)
-
-        for _ in range(15):
-            if stop_now:
-                break
-
-            pyautogui.write("testing :D", interval=0.005)
-            pyautogui.press("enter")
-            time.sleep(0.1)
-
-        if stop_now:
-            set_status("Built-in macro stopped")
-        else:
-            set_status("Built-in macro finished")
-    finally:
-        root.after(0, root.deiconify)
-        running = False
 
 
 def start_recording():
@@ -103,6 +69,13 @@ def stop_recording():
         set_status(status_text)
 
 
+def toggle_recording():
+    if recording:
+        stop_recording()
+    else:
+        start_recording()
+
+
 def play_recording():
     global running, stop_now
 
@@ -127,7 +100,7 @@ def play_recording():
 
 
 def run_recording():
-    global running
+    # global running
 
     try:
         root.after(0, root.withdraw)
@@ -164,7 +137,7 @@ def toggle_macro():
     elif running:
         stop_macro()
     else:
-        start_macro()
+        play_recording()
 
 
 def record_event(event_type, *data):
@@ -196,17 +169,35 @@ def record_event(event_type, *data):
 
 
 def on_press(key):
-    if hotkey is not None:
-        hotkey.press(key)
+    global cmd_pressed, ctrl_pressed
 
-    if recording:
-        if key not in KEYBOARD_MODIFIERS:
-            record_event("key", key)
+    if key in {keyboard.Key.cmd, keyboard.Key.cmd_l, keyboard.Key.cmd_r}:
+        cmd_pressed = True
+        return
+    if key in {keyboard.Key.ctrl, keyboard.Key.ctrl_l, keyboard.Key.ctrl_r}:
+        ctrl_pressed = True
+        return
+
+    if isinstance(key, keyboard.KeyCode) and key.char:
+        if key.char.lower() == "r":
+            toggle_recording()
+            return
+
+    if cmd_pressed and ctrl_pressed and key == TOGGLE_KEY:
+        toggle_macro()
+        return
+
+    if recording and key not in MODIFIER_KEYS:
+        record_event("key", key)
 
 
 def on_release(key):
-    if hotkey is not None:
-        hotkey.release(key)
+    global cmd_pressed, ctrl_pressed
+
+    if key in {keyboard.Key.cmd, keyboard.Key.cmd_l, keyboard.Key.cmd_r}:
+        cmd_pressed = False
+    elif key in {keyboard.Key.ctrl, keyboard.Key.ctrl_l, keyboard.Key.ctrl_r}:
+        ctrl_pressed = False
 
 
 def on_click(x, y, button, pressed):
@@ -236,19 +227,14 @@ play_button.grid(row=0, column=2, padx=4)
 macro_button_frame = tk.Frame(root)
 macro_button_frame.pack(pady=4)
 
-tk.Button(macro_button_frame, text="Start Macro", command=start_macro).grid(row=0, column=0, padx=4)
+tk.Button(macro_button_frame, text="Play Recording", command=play_recording).grid(row=0, column=0, padx=4)
 
-tk.Button(macro_button_frame, text="Stop Macro", command=stop_macro).grid(row=0, column=1, padx=4)
+tk.Button(macro_button_frame, text="Stop Playback", command=stop_macro).grid(row=0, column=1, padx=4)
 
 status = tk.Label(root, text="Ready")
 status.pack(pady=10)
 
 try:
-    global hotkey
-    hotkey = keyboard.HotKey(
-        keyboard.HotKey.parse("<cmd>+<ctrl>+k"),
-        toggle_macro,
-    )
     listener = keyboard.Listener(on_press=on_press, on_release=on_release)
     listener.start()
     listener_status["keyboard"] = True
